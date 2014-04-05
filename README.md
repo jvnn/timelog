@@ -4,7 +4,6 @@ timelog
 Fairly simple ruby cli program to log working hours.
 
 
-Usage:
-++++++
+# Usage:
 
 Run with "ruby timelog.rb" to see available commands.
