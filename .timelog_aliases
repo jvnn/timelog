@@ -1,0 +1,9 @@
+export TIMELOG_HOME=/path/to/timelog
+alias tlin='ruby -C $TIMELOG_HOME timelog.rb day start'
+alias tlout='ruby -C $TIMELOG_HOME timelog.rb day end'
+alias tlaway='ruby -C $TIMELOG_HOME timelog.rb day away'
+alias tlback='ruby -C $TIMELOG_HOME timelog.rb day back'
+alias tlstart='ruby -C $TIMELOG_HOME timelog.rb job start'
+alias tlstop='ruby -C $TIMELOG_HOME timelog.rb job stop'
+alias tlprint='ruby -C $TIMELOG_HOME timelog.rb print'
+alias tltimes='ruby -C $TIMELOG_HOME timelog.rb times'

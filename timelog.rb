@@ -3,7 +3,6 @@ require 'json'
 require 'set'
 
 TIMEFILENAME = "timedb.txt"
-MEMOFILENAME = "memo.txt"
 
 EVENT = "event"
 TIME = "time"
@@ -17,7 +16,7 @@ EVENT_DAY_BACK = "Back from pause"
 EVENT_DAY_STOP = "Stopping day"
 
 class Timelog
-  def initialize(timefilename, memofilename)
+  def initialize(timefilename)
     begin
       timedb = File.open(timefilename, 'r').read
     rescue Errno::ENOENT
@@ -34,8 +33,7 @@ class Timelog
         exit!
       end
     end
-      
-    @memofilename = memofilename
+    
     @timefilename = timefilename
     
     @jobs_in_progress = Set.new
@@ -74,6 +72,10 @@ class Timelog
 
 
   def start_job(id)
+    if @day_status != :started
+      puts "Can't start jobs if the day is " + @day_status.to_s
+      exit!
+    end
     if not @jobs_in_progress.empty?
       if @jobs_in_progress.include? id
         puts "Job already started"
@@ -112,7 +114,7 @@ class Timelog
       event = item[EVENT]
       id = item[ID]
       
-      puts "#{hour}:#{min} - #{event} #{id}"
+      printf "%02d:%02d - #{event} #{id}\n", hour, min
     end
   end
 
@@ -280,7 +282,7 @@ end
 
 
 if __FILE__ == $0
-  timelog = Timelog.new(TIMEFILENAME, MEMOFILENAME)
+  timelog = Timelog.new(TIMEFILENAME)
 
   cmd = ARGV[0]
   check(cmd)
