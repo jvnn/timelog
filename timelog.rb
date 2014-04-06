@@ -9,9 +9,12 @@ EVENT = "event"
 TIME = "time"
 ID = "id"
 
-EVENT_START = "Starting"
-EVENT_STOP = "Stopping"
-
+EVENT_JOB_START = "Starting job"
+EVENT_JOB_STOP = "Stopping job"
+EVENT_DAY_START = "Starting day"
+EVENT_DAY_PAUSE = "Starting pause"
+EVENT_DAY_BACK = "Back from pause"
+EVENT_DAY_STOP = "Stopping day"
 
 class Timelog
   def initialize(timefilename, memofilename)
@@ -36,14 +39,24 @@ class Timelog
     @timefilename = timefilename
     
     @jobs_in_progress = Set.new
+    @day_status = :not_started
     day = get_day
     day.each do |map|
       event = map[EVENT]
       id = map[ID]
-      if event == EVENT_START
+      case event
+      when EVENT_JOB_START
         @jobs_in_progress.add(id)
-      elsif event == EVENT_STOP
+      when EVENT_JOB_STOP
         @jobs_in_progress.delete(id)
+      when EVENT_DAY_START
+        @day_status = :started
+      when EVENT_DAY_PAUSE
+        @day_status = :on_pause
+      when EVENT_DAY_BACK
+        @day_status = :started
+      when EVENT_DAY_STOP
+        @day_status = :stopped
       end
     end
   end
@@ -55,8 +68,7 @@ class Timelog
       return
     end
     day = get_day
-    day.push({TIME=>Time.now.to_i, EVENT=>EVENT_STOP, ID=>id})
-    @jobs_in_progress.delete(id)
+    day.push({TIME=>Time.now.to_i, EVENT=>EVENT_JOB_STOP, ID=>id})
     puts "Stopped job " + id
   end
 
@@ -84,16 +96,14 @@ class Timelog
           stop_job(job)
         end
       end
-      @jobs_in_progress.clear
     end
-    @jobs_in_progress.add(id)
     day = get_day
-    day.push({TIME=>Time.now.to_i, EVENT=>EVENT_START, ID=>id})
+    day.push({TIME=>Time.now.to_i, EVENT=>EVENT_JOB_START, ID=>id})
     puts "Started job " + id
   end
 
 
-  def print_jobs()
+  def print()
     day = get_day
     day.each do |item|
       time = Time.at(item[TIME])
@@ -104,6 +114,121 @@ class Timelog
       
       puts "#{hour}:#{min} - #{event} #{id}"
     end
+  end
+
+
+  def calculate_times()
+    day = get_day
+    jobs = {}
+    current_start = -1
+    total_day = 0
+    total_pause = 0
+    day_ended = false
+    day.each do |item|
+      time = item[TIME]
+      event = item[EVENT]
+      if [EVENT_JOB_START, EVENT_JOB_STOP].include? event
+        id = item[ID]
+        if not jobs.has_key? id
+          jobs[id] = {}
+        end
+        jobs[id][time] = event
+      else
+        # day event
+        case event
+        when EVENT_DAY_START
+          current_start = time
+        when EVENT_DAY_PAUSE
+          total_day += time - current_start
+          current_start = time
+        when EVENT_DAY_BACK
+          total_pause += time - current_start
+          current_start = time
+        when EVENT_DAY_STOP
+          total_day = time - current_start
+          day_ended = true
+        end
+      end
+    end
+
+    if not day_ended
+      total_day += Time.now.to_i - current_start
+    end
+    h_day = total_day / 3600
+    m_day = (total_day % 3600) / 60
+    h_pause = total_pause / 3600
+    m_pause = (total_pause % 3600) / 60
+    if not day_ended
+      puts "Day so far: #{h_day}h #{m_day}min, pause: #{h_pause}h #{m_pause}min"
+    else
+      puts "Day: #{h_day}h #{m_day}min, pause: #{h_pause}h #{m_pause}min"
+    end
+
+    jobs.each_pair do |id, times|
+      total_time = 0
+      current_start = -1
+      times.keys.sort.each do |key|
+        case times[key]
+        when EVENT_JOB_START
+          current_start = key
+        when EVENT_JOB_STOP
+          total_time += key - current_start
+          current_start = -1
+        end
+      end
+
+      if current_start > -1
+        time_for_now = total_time + (Time.now.to_i - current_start)
+        h = time_for_now / 3600
+        m = (time_for_now % 3600) / 60
+        puts "Job #{id} still in progress, time until now: #{h}h #{m}min"
+      else
+        h = total_time / 3600
+        m = (total_time % 3600) / 60
+        puts "Job #{id}: #{h}h #{m}min"
+      end
+    end
+  end
+
+
+  def start_day()
+    if @day_status != :not_started
+      puts "Day already started."
+      exit!
+    end
+    day = get_day
+    day.push({TIME=>Time.now.to_i, EVENT=>EVENT_DAY_START})
+    puts "Started the day"
+  end
+
+  def start_pause()
+    if @day_status != :started
+      puts "Can't start a pause when day is " + @day_status.to_s
+      exit!
+    end
+    day = get_day
+    day.push({TIME=>Time.now.to_i, EVENT=>EVENT_DAY_PAUSE})
+    puts "Started a pause"
+  end
+
+  def stop_pause()
+    if @day_status != :on_pause
+      puts "Can't end a pause when not having one. (Status: " + @day_status.to_s + ")"
+      exit!
+    end
+    day = get_day
+    day.push({TIME=>Time.now.to_i, EVENT=>EVENT_DAY_BACK})
+    puts "Back from pause"
+  end
+
+  def stop_day(offset_min=0)
+    if not [:started, :on_pause].include? @day_status
+      puts "Can't end a day when day is " + @day_status.to_s
+      exit!
+    end
+    day = get_day
+    day.push({TIME=>Time.now.to_i + offset_min*60, EVENT=>EVENT_DAY_STOP})
+    puts "Ended the day"
   end
 
 
@@ -139,7 +264,10 @@ end
 
 def help()
   puts "Commands:"
-  puts "job start|stop|print [id]"
+  puts "job start|stop [id]"
+  puts "day start|away|back|end [offset for day's end in minutes]"
+  puts "print"
+  puts "times"
 end
 
 def check(x)
@@ -149,12 +277,31 @@ def check(x)
   end
 end
 
+
+
 if __FILE__ == $0
   timelog = Timelog.new(TIMEFILENAME, MEMOFILENAME)
 
   cmd = ARGV[0]
   check(cmd)
   case cmd
+  when 'day'
+    arg1 = ARGV[1]
+    check(arg1)
+    case arg1
+    when 'start'
+      timelog.start_day()
+    when 'away'
+      timelog.start_pause()
+    when 'back'
+      timelog.stop_pause()
+    when 'end'
+      timelog.stop_day(ARGV[2].to_i)
+    else
+      help
+      exit!
+    end
+
   when 'job'
     arg1 = ARGV[1]
     check(arg1)
@@ -165,13 +312,18 @@ if __FILE__ == $0
     when 'stop'
       check(ARGV[2])
       timelog.stop_job(ARGV[2])
-    when 'print'
-      timelog.print_jobs()
-      exit
     else
       help
       exit
     end
+    
+  when 'print'
+    timelog.print()
+    exit
+  when 'times'
+    timelog.calculate_times()
+    exit
+
   else
     help
     exit
