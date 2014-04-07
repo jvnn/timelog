@@ -60,18 +60,58 @@ class Timelog
   end
 
 
-  def stop_job(id)
+  def is_time_integer?(str)
+    sprintf("%02d", str.to_i) == str
+  end
+
+  def get_offset_from_param(offset)
+    if offset.nil?
+      return 0
+    elsif offset.include? ":"
+      # absolute time value
+      parts = offset.split(":")
+      if parts.length != 2
+        puts "Invalid time offset"
+        exit!
+      end
+
+      if not is_time_integer? parts[0] or not is_time_integer? parts[1]
+        puts "Invalid time, use numbers!"
+        exit!
+      end
+
+      h = parts[0].to_i
+      m = parts[1].to_i
+      if h < 0 or h > 23 or m < 0 or m > 59
+        puts "Invalid time, use valid h:min values"
+        exit!
+      end
+      now = Time.now
+      given_time = Time.new(now.year, now.month, now.day, h, m)
+      return given_time.to_i - now.to_i
+    else
+      # offset in minutes
+      if not is_time_integer? offset
+        puts "Invalid offset value, use full minutes"
+        exit!
+      end
+      return offset*60
+    end
+  end
+
+
+  def stop_job(id, offset)
     if not @jobs_in_progress.include? id
       puts "No such job"
       return
     end
     day = get_day
-    day.push({TIME=>Time.now.to_i, EVENT=>EVENT_JOB_STOP, ID=>id})
+    day.push({TIME=>Time.now.to_i + get_offset_from_param(offset), EVENT=>EVENT_JOB_STOP, ID=>id})
     puts "Stopped job " + id
   end
 
 
-  def start_job(id)
+  def start_job(id, offset)
     if @day_status != :started
       puts "Can't start jobs if the day is " + @day_status.to_s
       exit!
@@ -95,12 +135,12 @@ class Timelog
       end
       if answer == 'n'
         @jobs_in_progress.each do |job|
-          stop_job(job)
+          stop_job(job, offset)
         end
       end
     end
     day = get_day
-    day.push({TIME=>Time.now.to_i, EVENT=>EVENT_JOB_START, ID=>id})
+    day.push({TIME=>Time.now.to_i + get_offset_from_param(offset), EVENT=>EVENT_JOB_START, ID=>id})
     puts "Started job " + id
   end
 
@@ -129,27 +169,39 @@ class Timelog
     day.each do |item|
       time = item[TIME]
       event = item[EVENT]
-      if [EVENT_JOB_START, EVENT_JOB_STOP].include? event
+      
+      case event
+      when EVENT_DAY_START
+        current_start = time
+      when EVENT_DAY_PAUSE
+        total_day += time - current_start
+        current_start = time
+      when EVENT_DAY_BACK
+        pause_length = time - current_start
+        total_pause += pause_length
+        current_start = time
+        # remove pause from active jobs
+        jobs.each_value do |job|
+          if job[:active]
+            job[:total_time] -= pause_length
+          end
+        end
+      when EVENT_DAY_STOP
+        total_day += time - current_start
+        day_ended = true
+      when EVENT_JOB_START
         id = item[ID]
         if not jobs.has_key? id
-          jobs[id] = {}
+          jobs[id] = {:total_time => 0}
         end
-        jobs[id][time] = event
-      else
-        # day event
-        case event
-        when EVENT_DAY_START
-          current_start = time
-        when EVENT_DAY_PAUSE
-          total_day += time - current_start
-          current_start = time
-        when EVENT_DAY_BACK
-          total_pause += time - current_start
-          current_start = time
-        when EVENT_DAY_STOP
-          total_day = time - current_start
-          day_ended = true
-        end
+        job = jobs[id]
+        job[:active] = true
+        job[:start_time] = time
+      when EVENT_JOB_STOP
+        id = item[ID]
+        job = jobs[id]
+        job[:active] = false
+        job[:total_time] += time - job[:start_time]
       end
     end
 
@@ -166,70 +218,62 @@ class Timelog
       puts "Day: #{h_day}h #{m_day}min, pause: #{h_pause}h #{m_pause}min"
     end
 
-    jobs.each_pair do |id, times|
-      total_time = 0
-      current_start = -1
-      times.keys.sort.each do |key|
-        case times[key]
-        when EVENT_JOB_START
-          current_start = key
-        when EVENT_JOB_STOP
-          total_time += key - current_start
-          current_start = -1
-        end
-      end
-
-      if current_start > -1
-        time_for_now = total_time + (Time.now.to_i - current_start)
-        h = time_for_now / 3600
-        m = (time_for_now % 3600) / 60
+    jobs.each_pair do |id, data|
+      if data[:active]
+        data[:total_time] += Time.now.to_i - data[:start_time]
+        h = data[:total_time] / 3600
+        m = (data[:total_time] % 3600) / 60
         puts "Job #{id} still in progress, time until now: #{h}h #{m}min"
       else
-        h = total_time / 3600
-        m = (total_time % 3600) / 60
+        h = data[:total_time] / 3600
+        m = (data[:total_time] % 3600) / 60
         puts "Job #{id}: #{h}h #{m}min"
       end
     end
   end
 
 
-  def start_day()
+  def start_day(offset)
     if @day_status != :not_started
       puts "Day already started."
       exit!
     end
     day = get_day
-    day.push({TIME=>Time.now.to_i, EVENT=>EVENT_DAY_START})
+    day.push({TIME=>Time.now.to_i + get_offset_from_param(offset), EVENT=>EVENT_DAY_START})
     puts "Started the day"
   end
 
-  def start_pause()
+  def start_pause(offset)
     if @day_status != :started
       puts "Can't start a pause when day is " + @day_status.to_s
       exit!
     end
     day = get_day
-    day.push({TIME=>Time.now.to_i, EVENT=>EVENT_DAY_PAUSE})
+    day.push({TIME=>Time.now.to_i + get_offset_from_param(offset), EVENT=>EVENT_DAY_PAUSE})
     puts "Started a pause"
   end
 
-  def stop_pause()
+  def stop_pause(offset)
     if @day_status != :on_pause
       puts "Can't end a pause when not having one. (Status: " + @day_status.to_s + ")"
       exit!
     end
     day = get_day
-    day.push({TIME=>Time.now.to_i, EVENT=>EVENT_DAY_BACK})
+    day.push({TIME=>Time.now.to_i + get_offset_from_param(offset), EVENT=>EVENT_DAY_BACK})
     puts "Back from pause"
   end
 
-  def stop_day(offset_min=0)
+  def stop_day(offset)
     if not [:started, :on_pause].include? @day_status
       puts "Can't end a day when day is " + @day_status.to_s
       exit!
     end
+    # end any active jobs
+    @jobs_in_progress.each do |job|
+      stop_job(job, offset)
+    end
     day = get_day
-    day.push({TIME=>Time.now.to_i + offset_min*60, EVENT=>EVENT_DAY_STOP})
+    day.push({TIME=>Time.now.to_i + get_offset_from_param(offset), EVENT=>EVENT_DAY_STOP})
     puts "Ended the day"
   end
 
@@ -266,8 +310,8 @@ end
 
 def help()
   puts "Commands:"
-  puts "job start|stop [id]"
-  puts "day start|away|back|end [offset for day's end in minutes]"
+  puts "job start|stop [id] [offset as min | time as hh:mm]"
+  puts "day start|away|back|end [offset as min | time as hh:mm]"
   puts "print"
   puts "times"
 end
@@ -292,13 +336,13 @@ if __FILE__ == $0
     check(arg1)
     case arg1
     when 'start'
-      timelog.start_day()
+      timelog.start_day(ARGV[2])
     when 'away'
-      timelog.start_pause()
+      timelog.start_pause(ARGV[2])
     when 'back'
-      timelog.stop_pause()
+      timelog.stop_pause(ARGV[2])
     when 'end'
-      timelog.stop_day(ARGV[2].to_i)
+      timelog.stop_day(ARGV[2])
     else
       help
       exit!
@@ -310,10 +354,10 @@ if __FILE__ == $0
     case arg1
     when 'start'
       check(ARGV[2])
-      timelog.start_job(ARGV[2])
+      timelog.start_job(ARGV[2], ARGV[3])
     when 'stop'
       check(ARGV[2])
-      timelog.stop_job(ARGV[2])
+      timelog.stop_job(ARGV[2], ARGV[3])
     else
       help
       exit
