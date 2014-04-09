@@ -59,6 +59,12 @@ class Timelog
     end
   end
 
+  def get_time_now()
+    # round the time into minutes to avoid weird inconsistencies
+    # when displaying the times
+    now = Time.now.to_i
+    return now - now % 60
+  end
 
   def is_time_integer?(str)
     sprintf("%02d", str.to_i) == str
@@ -86,9 +92,10 @@ class Timelog
         puts "Invalid time, use valid h:min values"
         exit!
       end
-      now = Time.now
-      given_time = Time.new(now.year, now.month, now.day, h, m)
-      return given_time.to_i - now.to_i
+      now = get_time_now
+      now_time = Time.at(now)
+      given_time = Time.new(now_time.year, now_time.month, now_time.day, h, m)
+      return given_time.to_i - now
     else
       # offset in minutes
       if not is_time_integer? offset
@@ -106,7 +113,7 @@ class Timelog
       return
     end
     day = get_day
-    day.push({TIME=>Time.now.to_i + get_offset_from_param(offset), EVENT=>EVENT_JOB_STOP, ID=>id})
+    day.push({TIME=>get_time_now + get_offset_from_param(offset), EVENT=>EVENT_JOB_STOP, ID=>id})
     puts "Stopped job " + id
   end
 
@@ -140,7 +147,7 @@ class Timelog
       end
     end
     day = get_day
-    day.push({TIME=>Time.now.to_i + get_offset_from_param(offset), EVENT=>EVENT_JOB_START, ID=>id})
+    day.push({TIME=>get_time_now + get_offset_from_param(offset), EVENT=>EVENT_JOB_START, ID=>id})
     puts "Started job " + id
   end
 
@@ -206,7 +213,7 @@ class Timelog
     end
 
     if not day_ended
-      total_day += Time.now.to_i - current_start
+      total_day += get_time_now - current_start
     end
     h_day = total_day / 3600
     m_day = (total_day % 3600) / 60
@@ -220,7 +227,7 @@ class Timelog
 
     jobs.each_pair do |id, data|
       if data[:active]
-        data[:total_time] += Time.now.to_i - data[:start_time]
+        data[:total_time] += get_time_now - data[:start_time]
         h = data[:total_time] / 3600
         m = (data[:total_time] % 3600) / 60
         puts "Job #{id} still in progress, time until now: #{h}h #{m}min"
@@ -239,7 +246,7 @@ class Timelog
       exit!
     end
     day = get_day
-    day.push({TIME=>Time.now.to_i + get_offset_from_param(offset), EVENT=>EVENT_DAY_START})
+    day.push({TIME=>get_time_now + get_offset_from_param(offset), EVENT=>EVENT_DAY_START})
     puts "Started the day"
   end
 
@@ -249,7 +256,7 @@ class Timelog
       exit!
     end
     day = get_day
-    day.push({TIME=>Time.now.to_i + get_offset_from_param(offset), EVENT=>EVENT_DAY_PAUSE})
+    day.push({TIME=>get_time_now + get_offset_from_param(offset), EVENT=>EVENT_DAY_PAUSE})
     puts "Started a pause"
   end
 
@@ -259,7 +266,7 @@ class Timelog
       exit!
     end
     day = get_day
-    day.push({TIME=>Time.now.to_i + get_offset_from_param(offset), EVENT=>EVENT_DAY_BACK})
+    day.push({TIME=>get_time_now + get_offset_from_param(offset), EVENT=>EVENT_DAY_BACK})
     puts "Back from pause"
   end
 
@@ -273,7 +280,7 @@ class Timelog
       stop_job(job, offset)
     end
     day = get_day
-    day.push({TIME=>Time.now.to_i + get_offset_from_param(offset), EVENT=>EVENT_DAY_STOP})
+    day.push({TIME=>get_time_now + get_offset_from_param(offset), EVENT=>EVENT_DAY_STOP})
     puts "Ended the day"
   end
 
