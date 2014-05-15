@@ -225,6 +225,7 @@ class Timelog
       puts "Day: #{h_day}h #{m_day}min, pause: #{h_pause}h #{m_pause}min"
     end
 
+    total_jobs = 0
     jobs.each_pair do |id, data|
       if data[:active]
         data[:total_time] += get_time_now - data[:start_time]
@@ -236,6 +237,14 @@ class Timelog
         m = (data[:total_time] % 3600) / 60
         puts "Job #{id}: #{h}h #{m}min"
       end
+      total_jobs += data[:total_time]
+    end
+
+    other_time = total_day - total_pause - total_jobs
+    if other_time > 0
+      h = other_time / 3600
+      m = (other_time % 3600) / 60
+      puts "Unassigned time: #{h}h #{m}min"
     end
   end
 
@@ -248,6 +257,11 @@ class Timelog
     day = get_day
     day.push({TIME=>get_time_now + get_offset_from_param(offset), EVENT=>EVENT_DAY_START})
     puts "Started the day"
+    puts "Start a job (or leave empty not to): "
+    answer = $stdin.gets.chomp
+    if not answer.empty?
+      start_job(answer, offset)
+    end
   end
 
   def start_pause(offset)
