@@ -70,31 +70,35 @@ class Timelog
     sprintf("%02d", str.to_i) == str
   end
 
+  def get_time_from_string(time_string)
+    parts = time_string.split(":")
+    if parts.length != 2
+      puts "Invalid time"
+      exit!
+    end
+
+    if not is_time_integer? parts[0] or not is_time_integer? parts[1]
+      puts "Invalid time, use numbers!"
+      exit!
+    end
+
+    h = parts[0].to_i
+    m = parts[1].to_i
+    if h < 0 or h > 23 or m < 0 or m > 59
+      puts "Invalid time, use valid h:min values"
+      exit!
+    end
+    now = get_time_now
+    now_time = Time.at(now)
+    Time.new(now_time.year, now_time.month, now_time.day, h, m)
+  end
+
   def get_offset_from_param(offset)
     if offset.nil?
       return 0
     elsif offset.include? ":"
       # absolute time value
-      parts = offset.split(":")
-      if parts.length != 2
-        puts "Invalid time offset"
-        exit!
-      end
-
-      if not is_time_integer? parts[0] or not is_time_integer? parts[1]
-        puts "Invalid time, use numbers!"
-        exit!
-      end
-
-      h = parts[0].to_i
-      m = parts[1].to_i
-      if h < 0 or h > 23 or m < 0 or m > 59
-        puts "Invalid time, use valid h:min values"
-        exit!
-      end
-      now = get_time_now
-      now_time = Time.at(now)
-      given_time = Time.new(now_time.year, now_time.month, now_time.day, h, m)
+      given_time = get_time_from_string(offset)
       return given_time.to_i - now
     else
       # offset in minutes
@@ -320,6 +324,25 @@ class Timelog
     puts "Ended the day"
   end
 
+  def edit_latest()
+    day = get_day
+    if day.empty?
+      puts "Nothing to edit"
+      exit!
+    end
+    last_item = day.last
+    last_time = Time.at(last_item[TIME])
+    hour = last_time.hour.to_s
+    min = last_time.min.to_s
+    event = last_item[EVENT]
+    id = last_item[ID]
+    puts "#{event} #{id}: #{hour}:#{min}"
+
+    puts "insert new time: "
+    answer = $stdin.gets.chomp
+    given_time = get_time_from_string(answer)
+    last_item[TIME] = given_time.to_i;
+  end
 
   def get_day()
     now = Time.now
@@ -355,6 +378,7 @@ def help()
   puts "Commands:"
   puts "job start|stop [id] [offset as min | time as hh:mm]"
   puts "day start|away|back|end [offset as min | time as hh:mm]"
+  puts "edit"
   puts "print"
   puts "times [job prefix for listing]"
 end
@@ -405,6 +429,9 @@ if __FILE__ == $0
       help
       exit
     end
+
+  when 'edit'
+    timelog.edit_latest()
     
   when 'print'
     timelog.print_events()
