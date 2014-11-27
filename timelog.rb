@@ -108,6 +108,10 @@ class Timelog
 
 
   def stop_job(id, offset)
+    if @day_status == :on_pause
+      puts "Can't stop jobs when on pause"
+      exit!
+    end
     if not @jobs_in_progress.include? id
       puts "No such job"
       return
@@ -129,22 +133,22 @@ class Timelog
         exit!
       end
 
-      puts "Following jobs are in progress:"
+      #puts "Following jobs are in progress:"
+      #@jobs_in_progress.each do |job|
+      #  puts job
+      #end
+      #puts "Start in parallel? (y/n)> "
+      #answer = $stdin.gets.chomp
+      #alts = Set.new ['y', 'n']
+      #while not alts.include? answer
+      #  puts "(y/n) > "
+      #  answer = $stdin.gets.chomp
+      #end
+      #if answer == 'n'
       @jobs_in_progress.each do |job|
-        puts job
+        stop_job(job, offset)
       end
-      puts "Start in parallel? (y/n)> "
-      answer = $stdin.gets.chomp
-      alts = Set.new ['y', 'n']
-      while not alts.include? answer
-        puts "(y/n) > "
-        answer = $stdin.gets.chomp
-      end
-      if answer == 'n'
-        @jobs_in_progress.each do |job|
-          stop_job(job, offset)
-        end
-      end
+      #end
     end
     day = get_day
     day.push({TIME=>get_time_now + get_offset_from_param(offset), EVENT=>EVENT_JOB_START, ID=>id})
@@ -152,7 +156,7 @@ class Timelog
   end
 
 
-  def print()
+  def print_events()
     day = get_day
     day.each do |item|
       time = Time.at(item[TIME])
@@ -166,7 +170,7 @@ class Timelog
   end
 
 
-  def calculate_times()
+  def calculate_times(job_prefix)
     day = get_day
     jobs = {}
     current_start = -1
@@ -231,20 +235,37 @@ class Timelog
         data[:total_time] += get_time_now - data[:start_time]
         h = data[:total_time] / 3600
         m = (data[:total_time] % 3600) / 60
-        puts "Job #{id} still in progress, time until now: #{h}h #{m}min"
+        puts "Job \"#{id}\" still in progress, time until now: #{h}h #{m}min"
       else
         h = data[:total_time] / 3600
         m = (data[:total_time] % 3600) / 60
-        puts "Job #{id}: #{h}h #{m}min"
+        puts "Job \"#{id}\": #{h}h #{m}min"
       end
       total_jobs += data[:total_time]
     end
 
-    other_time = total_day - total_pause - total_jobs
+    other_time = total_day - total_jobs
     if other_time > 0
       h = other_time / 3600
       m = (other_time % 3600) / 60
       puts "Unassigned time: #{h}h #{m}min"
+    end
+
+    # list all jobs that start with the given prefix
+    if not job_prefix.nil?
+      print "Job listing: "
+      first = true
+      jobs.each_pair do |id, data|
+        if id.start_with? job_prefix
+          if first
+            first = false
+          else
+            print ", "
+          end
+          print id
+        end
+      end
+      puts
     end
   end
 
@@ -256,6 +277,7 @@ class Timelog
     end
     day = get_day
     day.push({TIME=>get_time_now + get_offset_from_param(offset), EVENT=>EVENT_DAY_START})
+    @day_status = :started
     puts "Started the day"
     puts "Start a job (or leave empty not to): "
     answer = $stdin.gets.chomp
@@ -334,7 +356,7 @@ def help()
   puts "job start|stop [id] [offset as min | time as hh:mm]"
   puts "day start|away|back|end [offset as min | time as hh:mm]"
   puts "print"
-  puts "times"
+  puts "times [job prefix for listing]"
 end
 
 def check(x)
@@ -385,10 +407,10 @@ if __FILE__ == $0
     end
     
   when 'print'
-    timelog.print()
+    timelog.print_events()
     exit
   when 'times'
-    timelog.calculate_times()
+    timelog.calculate_times(ARGV[1])
     exit
 
   else
