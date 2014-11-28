@@ -98,6 +98,7 @@ class Timelog
       return 0
     elsif offset.include? ":"
       # absolute time value
+      now = get_time_now
       given_time = get_time_from_string(offset)
       return given_time.to_i - now
     else
